@@ -119,7 +119,6 @@ class Controller
         if (0 === count($locales)) {
             throw new NotFoundHttpException();
         }
-
         $cache = new ConfigCache(sprintf('%s/%s.%s.%s',
             $this->cacheDir,
             $domain,
@@ -127,49 +126,32 @@ class Controller
             $_format
         ), $this->debug);
 
-        if (!$cache->isFresh()) {
-            $resources    = array();
-            $translations = array();
+        $resources    = array();
+        $translations = array();
 
-            foreach ($locales as $locale) {
-                $translations[$locale] = array();
+        foreach ($locales as $locale) {
+            $translations[$locale] = array();
 
-                $files = $this->translationFinder->get($domain, $locale);
+            $translations[$locale][$domain] = array();
+            $catalogue = $this->translator->getCatalogue($locale);
 
-                foreach ($files as $filename) {
-                    [$currentDomain] = Util::extractCatalogueInformationFromFilename($filename);
+            $translations[$locale][$domain] = array_replace_recursive(
+                $translations[$locale][$domain],
+                $catalogue->all($domain)
+            );
+        }
 
-                    if (!isset($translations[$locale][$currentDomain])) {
-                        $translations[$locale][$currentDomain] = array();
-                    }
+        $content = $this->twig->render('@BazingaJsTranslation/getTranslations.' . $_format . '.twig', array(
+            'fallback'       => $this->localeFallback,
+            'defaultDomain'  => $this->defaultDomain,
+            'translations'   => $translations,
+            'include_config' => true,
+        ));
 
-                    $extension = pathinfo($filename, \PATHINFO_EXTENSION);
-
-                    if (isset($this->loaders[$extension])) {
-                        $resources[] = new FileResource($filename);
-                        $catalogue   = $this->loaders[$extension]
-                            ->load($filename, $locale, $currentDomain);
-
-                        $translations[$locale][$currentDomain] = array_replace_recursive(
-                            $translations[$locale][$currentDomain],
-                            $catalogue->all($currentDomain)
-                        );
-                    }
-                }
-            }
-
-            $content = $this->twig->render('@BazingaJsTranslation/getTranslations.' . $_format . '.twig', array(
-                'fallback'       => $this->localeFallback,
-                'defaultDomain'  => $this->defaultDomain,
-                'translations'   => $translations,
-                'include_config' => true,
-            ));
-
-            try {
-                $cache->write($content, $resources);
-            } catch (IOException $e) {
-                throw new NotFoundHttpException();
-            }
+        try {
+            $cache->write($content, $resources);
+        } catch (IOException $e) {
+            throw new NotFoundHttpException();
         }
 
         if (method_exists($cache, 'getPath')) {
@@ -192,6 +174,7 @@ class Controller
         $response->setExpires($expirationTime);
 
         return $response;
+
     }
 
     private function getLocales(Request $request)
